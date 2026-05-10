@@ -17,7 +17,7 @@ struct NotchIndicatorView: View {
     private let feedbackBodyHeight: CGFloat = 52
 
     private var closedWidth: CGFloat {
-        if case .recording = viewModel.state {
+        if viewModel.isRecordingActivity {
             return NotchIndicatorLayout.recordingClosedWidth(
                 hasNotch: geometry.hasNotch,
                 notchWidth: geometry.notchWidth,
@@ -32,7 +32,7 @@ struct NotchIndicatorView: View {
     }
 
     private var leftStatusSpacing: CGFloat {
-        guard case .recording = viewModel.state else {
+        guard viewModel.isRecordingActivity else {
             return 0
         }
 
@@ -155,7 +155,7 @@ struct NotchIndicatorView: View {
             }
         }
         .onChange(of: viewModel.state) {
-            if viewModel.state == .recording {
+            if viewModel.isRecordingActivity {
                 withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
                     dotPulse = true
                 }
@@ -191,6 +191,8 @@ struct NotchIndicatorView: View {
         switch viewModel.state {
         case .idle, .promptSelection, .promptProcessing:
             return String(localized: "Idle")
+        case .starting:
+            return String(localized: "Starting recording")
         case .recording:
             if let warning = viewModel.recordingCancelWarningMessage {
                 return warning
@@ -293,7 +295,7 @@ struct NotchIndicatorView: View {
 
     @ViewBuilder
     private var leftContent: some View {
-        if case .recording = viewModel.state {
+        if viewModel.isRecordingActivity {
             IndicatorRecordingContent(
                 viewModel: viewModel,
                 content: viewModel.notchIndicatorLeftContent,
@@ -305,7 +307,7 @@ struct NotchIndicatorView: View {
 
     @ViewBuilder
     private var rightContent: some View {
-        if case .recording = viewModel.state {
+        if viewModel.isRecordingActivity {
             IndicatorRecordingContent(
                 viewModel: viewModel,
                 content: viewModel.notchIndicatorRightContent,

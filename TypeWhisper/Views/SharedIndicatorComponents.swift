@@ -96,7 +96,7 @@ struct IndicatorLeftStatus: View {
         switch viewModel.state {
         case .idle, .promptSelection, .promptProcessing:
             Color.clear.frame(width: 0, height: 0)
-        case .recording:
+        case .starting, .recording:
             if let icon = viewModel.activeAppIcon {
                 IndicatorAppIconView(icon: icon, sizing: sizing)
             } else {

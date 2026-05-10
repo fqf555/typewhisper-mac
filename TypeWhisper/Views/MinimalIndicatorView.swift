@@ -59,7 +59,7 @@ struct MinimalIndicatorView: View {
         }
 
         switch viewModel.state {
-        case .recording:
+        case .starting, .recording:
             return recordingWidth
         case .processing:
             return processingWidth
@@ -89,7 +89,7 @@ struct MinimalIndicatorView: View {
             .animation(.easeInOut(duration: 0.2), value: viewModel.state)
             .animation(.easeInOut(duration: 1.0), value: dotPulse)
             .onChange(of: viewModel.state) {
-                if viewModel.state == .recording {
+                if viewModel.isRecordingActivity {
                     withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
                         dotPulse = true
                     }
@@ -113,6 +113,8 @@ struct MinimalIndicatorView: View {
         switch viewModel.state {
         case .idle, .promptSelection, .promptProcessing:
             return String(localized: "Idle")
+        case .starting:
+            return String(localized: "Starting recording")
         case .recording:
             return String(localized: "Recording")
         case .processing:
@@ -161,7 +163,7 @@ struct MinimalIndicatorView: View {
     @ViewBuilder
     private var compactStatus: some View {
         switch viewModel.state {
-        case .recording:
+        case .starting, .recording:
             HStack(spacing: viewModel.notchIndicatorRightContent == .none ? 0 : 8) {
                 IndicatorLeftStatus(
                     viewModel: viewModel,

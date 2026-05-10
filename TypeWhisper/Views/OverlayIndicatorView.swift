@@ -77,7 +77,7 @@ struct OverlayIndicatorView: View {
         .animation(.easeInOut(duration: 0.2), value: viewModel.state)
         .animation(.easeOut(duration: 0.08), value: viewModel.audioLevel)
         .onChange(of: viewModel.state) {
-            if viewModel.state == .recording {
+            if viewModel.isRecordingActivity {
                 withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
                     dotPulse = true
                 }
@@ -192,7 +192,7 @@ struct OverlayIndicatorView: View {
                 hasActionFeedback: hasActionFeedback
             )
 
-            if case .recording = viewModel.state {
+            if viewModel.isRecordingActivity {
                 IndicatorRecordingContent(
                     viewModel: viewModel,
                     content: viewModel.notchIndicatorLeftContent,
@@ -203,7 +203,7 @@ struct OverlayIndicatorView: View {
 
             Spacer()
 
-            if case .recording = viewModel.state {
+            if viewModel.isRecordingActivity {
                 IndicatorRecordingContent(
                     viewModel: viewModel,
                     content: viewModel.notchIndicatorRightContent,

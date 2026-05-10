@@ -93,6 +93,29 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
     var startRecordingOverride: (() throws -> Void)?
     var stopRecordingOverride: ((StopPolicy) async -> [Float])?
 
+    private func updatePublishedState(_ update: @escaping @Sendable (AudioRecordingService) -> Void) {
+        if Thread.isMainThread {
+            update(self)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                update(self)
+            }
+        }
+    }
+
+    private func setPublishedIsRecording(_ isRecording: Bool) {
+        updatePublishedState { service in
+            service.isRecording = isRecording
+        }
+    }
+
+    private func setPublishedRecoveryError(_ recoveryError: AudioRecordingError?) {
+        updatePublishedState { service in
+            service.recoveryError = recoveryError
+        }
+    }
+
     /// CoreAudio device ID to use for recording. nil = system default input.
     var selectedDeviceID: AudioDeviceID? {
         get { configLock.withLock { _selectedDeviceID } }
@@ -265,7 +288,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
 
         // Clear any terminal-recovery error from a previous session so the
         // view model doesn't see a stale failure on the first buffer update.
-        recoveryError = nil
+        setPublishedRecoveryError(nil)
 
         try validateRecordingInputAvailability()
         clearRecordingBuffer(requestUptimeNanoseconds: requestUptimeNanoseconds)
@@ -305,7 +328,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
                 try startRecordingOverride()
                 outputVolumeGuard.restoreIfRaised(reason: "recording-start-override")
                 outputVolumeGuard.clear()
-                isRecording = true
+                setPublishedIsRecording(true)
             } catch {
                 outputVolumeGuard.restoreIfRaised(reason: "recording-start-override-failed")
                 outputVolumeGuard.clear()
@@ -320,7 +343,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
                 try startInputOnlyRecording(deviceID: inputOnlyDeviceID, label: "recording")
                 outputVolumeGuard.restoreIfRaised(reason: "recording-start")
                 outputVolumeGuard.clear()
-                isRecording = true
+                setPublishedIsRecording(true)
             } catch {
                 cleanupAfterFailedInputOnlyStart()
                 throw error
@@ -355,7 +378,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
 
             outputVolumeGuard.restoreIfRaised(reason: "recording-start")
             outputVolumeGuard.clear()
-            isRecording = true
+            setPublishedIsRecording(true)
         } catch {
             let failedEngine = engineLock.withLock { audioEngine } ?? engine
             cleanupAfterFailedStart(failedEngine)
@@ -1048,7 +1071,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
     /// handled it. Called from `DictationViewModel` once the session is
     /// unwound so the @Published value doesn't linger for later bindings.
     func clearRecoveryError() {
-        recoveryError = nil
+        setPublishedRecoveryError(nil)
     }
 
     private func mapSelectedInputDeviceError(_ error: SelectedInputDeviceError) -> AudioRecordingError {

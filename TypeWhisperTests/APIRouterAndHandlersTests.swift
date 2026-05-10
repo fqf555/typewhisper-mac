@@ -1706,6 +1706,8 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         _ = context.dictationViewModel.apiStartRecording()
 
+        XCTAssertEqual(context.dictationViewModel.state, .starting)
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
         XCTAssertEqual(context.dictationViewModel.state, DictationViewModel.State.recording)
         XCTAssertEqual(events, ["start_audio", "capture_app"])
 
@@ -1736,6 +1738,7 @@ final class APIRouterAndHandlersTests: XCTestCase {
         }
 
         let sessionID = context.dictationViewModel.apiStartRecording()
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
         XCTAssertEqual(context.dictationViewModel.state, .recording)
 
         context.hotkeyService.onPushToTalkInterruption?()
@@ -1757,6 +1760,58 @@ final class APIRouterAndHandlersTests: XCTestCase {
         XCTAssertEqual(
             context.dictationViewModel.apiDictationSession(id: sessionID)?.error,
             "Recording discarded because additional keys were pressed"
+        )
+    }
+
+    @MainActor
+    func testPushToTalkReleaseDuringStartupFailsSessionAndStopsStartedAudio() async throws {
+        let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
+        var dictationContext: DictationContext?
+        defer {
+            dictationContext = nil
+            TestSupport.remove(appSupportDirectory)
+        }
+
+        dictationContext = Self.makeDictationContext(appSupportDirectory: appSupportDirectory)
+        let context = try XCTUnwrap(dictationContext)
+        let audioStartupEntered = expectation(description: "audio startup entered")
+        let stopRecordingCalled = expectation(description: "started audio stopped after cancellation")
+        let allowStartupToFinish = DispatchSemaphore(value: 0)
+        var stopPolicies: [String] = []
+
+        context.audioRecordingService.hasMicrophonePermissionOverride = true
+        context.audioRecordingService.inputAvailabilityOverride = { _ in true }
+        context.audioRecordingService.startRecordingOverride = {
+            audioStartupEntered.fulfill()
+            _ = allowStartupToFinish.wait(timeout: .now() + 2)
+        }
+        context.audioRecordingService.stopRecordingOverride = { policy in
+            stopPolicies.append(policy.logDescription)
+            stopRecordingCalled.fulfill()
+            return []
+        }
+        let discardMessage = String(localized: "Too short, hold the hotkey a bit longer")
+
+        let sessionID = context.dictationViewModel.apiStartRecording()
+
+        XCTAssertEqual(context.dictationViewModel.state, .starting)
+        await fulfillment(of: [audioStartupEntered], timeout: 1.0)
+
+        _ = context.dictationViewModel.apiStopRecording()
+        XCTAssertEqual(context.dictationViewModel.state, .inserting)
+        XCTAssertEqual(
+            context.dictationViewModel.actionFeedbackMessage,
+            discardMessage
+        )
+
+        allowStartupToFinish.signal()
+        await fulfillment(of: [stopRecordingCalled], timeout: 1.0)
+
+        XCTAssertEqual(stopPolicies, [AudioRecordingService.StopPolicy.immediate.logDescription])
+        XCTAssertEqual(context.dictationViewModel.apiDictationSession(id: sessionID)?.status, .failed)
+        XCTAssertEqual(
+            context.dictationViewModel.apiDictationSession(id: sessionID)?.error,
+            discardMessage
         )
     }
 
@@ -1787,6 +1842,7 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         _ = context.dictationViewModel.apiStartRecording()
 
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
         XCTAssertEqual(context.dictationViewModel.state, DictationViewModel.State.recording)
         XCTAssertNil(context.dictationViewModel.activeRuleName)
 
@@ -1834,6 +1890,7 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         let sessionID = context.dictationViewModel.apiStartRecording()
 
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
         XCTAssertEqual(context.dictationViewModel.state, .recording)
         XCTAssertNil(context.dictationViewModel.activeRuleName)
 
@@ -1890,6 +1947,7 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         let sessionID = context.dictationViewModel.apiStartRecording()
 
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
         XCTAssertEqual(context.dictationViewModel.state, .recording)
         XCTAssertEqual(context.dictationViewModel.activeRuleName, "Workflow Notes")
 
@@ -1906,7 +1964,7 @@ final class APIRouterAndHandlersTests: XCTestCase {
     }
 
     @MainActor
-    func testApiStartRecording_pausesMediaAfterAudioStart() async throws {
+    func testApiStartRecording_pausesMediaBeforeAudioStart() async throws {
         let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
         var events: [String] = []
         let mediaPlaybackService = MockMediaPlaybackService {
@@ -1937,11 +1995,12 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         _ = context.dictationViewModel.apiStartRecording()
 
-        XCTAssertEqual(Array(events.prefix(3)), ["start_audio", "pause_media", "capture_app"])
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
+        XCTAssertEqual(Array(events.prefix(3)), ["pause_media", "start_audio", "capture_app"])
     }
 
     @MainActor
-    func testApiStartRecordingFailureSkipsPostAudioStartSideEffects() async throws {
+    func testApiStartRecordingFailureKeepsImmediateFeedbackAndSkipsContextCapture() async throws {
         let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
         var events: [String] = []
         let mediaPlaybackService = MockMediaPlaybackService {
@@ -1982,7 +2041,8 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         let sessionID = context.dictationViewModel.apiStartRecording()
 
-        XCTAssertEqual(events, ["start_audio"])
+        await Self.waitForDictationState(context.dictationViewModel, .inserting)
+        XCTAssertEqual(events, ["start_sound", "pause_media", "start_audio"])
         XCTAssertEqual(context.dictationViewModel.state, .inserting)
         XCTAssertEqual(context.dictationViewModel.actionFeedbackMessage, "Audio start failed")
         XCTAssertEqual(context.dictationViewModel.apiDictationSession(id: sessionID)?.status, .failed)
@@ -1990,7 +2050,7 @@ final class APIRouterAndHandlersTests: XCTestCase {
     }
 
     @MainActor
-    func testApiStartRecording_playsStartSoundAfterAudioStart() async throws {
+    func testApiStartRecording_playsStartSoundBeforeAudioStart() async throws {
         let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
         let originalSelectedInputDeviceUID = UserDefaults.standard.object(forKey: UserDefaultsKeys.selectedInputDeviceUID)
         UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.selectedInputDeviceUID)
@@ -2020,7 +2080,8 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         _ = context.dictationViewModel.apiStartRecording()
 
-        XCTAssertEqual(events, ["start_audio", "start_sound"])
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
+        XCTAssertEqual(events, ["start_sound", "start_audio"])
     }
 
     @MainActor
@@ -2087,12 +2148,13 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         _ = context.dictationViewModel.apiStartRecording()
 
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
         XCTAssertEqual(events, ["start_audio"])
         XCTAssertTrue(context.audioRecordingService.hasExplicitDeviceSelection)
     }
 
     @MainActor
-    func testApiStartRecording_keepsStartSoundForUSBInputAfterAudioStart() async throws {
+    func testApiStartRecording_keepsStartSoundForUSBInputBeforeAudioStart() async throws {
         let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
         let originalSelectedInputDeviceUID = UserDefaults.standard.object(forKey: UserDefaultsKeys.selectedInputDeviceUID)
         var events: [String] = []
@@ -2143,7 +2205,8 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         _ = context.dictationViewModel.apiStartRecording()
 
-        XCTAssertEqual(events, ["start_audio", "start_sound"])
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
+        XCTAssertEqual(events, ["start_sound", "start_audio"])
     }
 
     #if !APPSTORE
@@ -2386,6 +2449,7 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         _ = context.dictationViewModel.apiStartRecording()
 
+        await Self.waitForDictationState(context.dictationViewModel, .inserting)
         XCTAssertEqual(context.dictationViewModel.state, .inserting)
         XCTAssertEqual(
             context.dictationViewModel.actionFeedbackMessage,
@@ -2437,6 +2501,7 @@ final class APIRouterAndHandlersTests: XCTestCase {
 
         _ = context.dictationViewModel.apiStartRecording()
 
+        await Self.waitForDictationState(context.dictationViewModel, .recording)
         XCTAssertEqual(context.dictationViewModel.state, .recording)
         XCTAssertTrue(context.ttsProvider.recordedRequests.isEmpty)
     }
@@ -3050,6 +3115,23 @@ final class APIRouterAndHandlersTests: XCTestCase {
         } else {
             UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.selectedInputDeviceUID)
         }
+    }
+
+    @MainActor
+    private static func waitForDictationState(
+        _ viewModel: DictationViewModel,
+        _ expectedState: DictationViewModel.State,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<40 {
+            if viewModel.state == expectedState {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+
+        XCTFail("Timed out waiting for dictation state \(expectedState); current state is \(viewModel.state)", file: file, line: line)
     }
 
     private static func jsonObject(_ response: HTTPResponse) throws -> [String: Any] {

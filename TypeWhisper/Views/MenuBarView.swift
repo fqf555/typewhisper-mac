@@ -102,7 +102,7 @@ private final class MenuBarState: ObservableObject {
     private func update(state: DictationViewModel.State) {
         let modelManager = ServiceContainer.shared.modelManagerService
         switch state {
-        case .recording:
+        case .starting, .recording:
             statusText = String(localized: "Recording...")
             statusImage = "record.circle.fill"
         case .processing:

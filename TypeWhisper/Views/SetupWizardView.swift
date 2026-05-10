@@ -961,7 +961,7 @@ struct SetupWizardView: View {
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.tertiary, lineWidth: 1))
                         .focused($isTrialFieldFocused)
 
-                    if dictation.state == .recording {
+                    if dictation.isRecordingActivity {
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(.red)
