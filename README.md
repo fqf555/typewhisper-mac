@@ -4,6 +4,8 @@
 [![macOS](https://img.shields.io/badge/macOS-14.0%2B-black.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-6-orange.svg)](https://swift.org)
 
+> This repository is a modified fork of the upstream TypeWhisper for Mac project. Releases published here are maintained by this fork and may differ from upstream builds.
+
 Speech-to-text and AI text processing for macOS. Transcribe audio using
 on-device AI models or cloud APIs (Groq, OpenAI, xAI/Grok), then transform the
 result with reusable workflows. Your voice data stays on your Mac with local
